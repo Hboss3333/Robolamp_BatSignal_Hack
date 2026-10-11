@@ -1,0 +1,176 @@
+/*
+  ************************************************************************************
+  * MIT License
+  *
+  * Copyright (c) 2024 Crunchlabs LLC (DEALR Code)
+
+  * Permission is hereby granted, free of charge, to any person obtaining a copy
+  * of this software and associated documentation files (the "Software"), to deal
+  * in the Software without restriction, including without limitation the rights
+  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  * copies of the Software, and to permit persons to whom the Software is furnished
+  * to do so, subject to the following conditions:
+  *
+  * The above copyright notice and this permission notice shall be included in all
+  * copies or substantial portions of the Software.
+  *
+  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+  * INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+  * PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+  * HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+  * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+  * OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+  *
+  ************************************************************************************
+*/
+
+// BAT-SIGNAL: replace Pomodoro/src/main.cpp with this entire file.
+// Uses the pin assignments and libraries in your uploaded RoboLamp code.
+// Other project files can stay in place. This replaces the stock modes.
+// Keep the joystick centered during power-on calibration.
+// 1: save current aim and start/restart the search sequence.
+// 2: stop and return to manual aiming, with yellow light.
+// 3: stop and show yellow (useful for lining up your stencil).
+// 4: stop and turn lights off.
+// Joystick aims while stopped. Up/down height buttons are unused.
+// Aim is stored in RAM; set it again after restarting power.
+// No darkness sensor: start the show yourself after darkening the room.
+
+#include <Arduino.h>
+#include <Adafruit_NeoPixel.h>
+#include <Adafruit_TiCoServo.h>
+
+const uint8_t YAW_PIN=10, PITCH_PIN=9, PIXEL_PIN=3;
+const uint8_t WARM_PIN=5, COOL_PIN=6, HEIGHT_SPEED_PIN=11, HEIGHT_DIR_PIN=12;
+const uint8_t JOY_YAW=A6, JOY_PITCH=A7;
+// Conservative ranges, inside the stock code's hard constraints.
+const int YAW_MIN=20, YAW_MAX=160, PITCH_MIN=50, PITCH_MAX=150;
+const uint32_t SIGNAL_MS=15000UL, SETTLE_MS=600UL;
+const uint8_t YELLOW_BRIGHTNESS=255;
+Adafruit_TiCoServo yawServo, pitchServo;
+Adafruit_NeoPixel ring(12, PIXEL_PIN, NEO_GRB + NEO_KHZ800);
+
+enum Phase { AIM, SEARCH, LOCK_ON, SETTLE, SIGNAL };
+Phase phase=AIM;
+float yaw=90, pitch=90, fromYaw=90, fromPitch=90;
+int aimYaw=90, aimPitch=90, toYaw=90, toPitch=90;
+int centerYaw=512, centerPitch=512;
+uint32_t phaseStart=0, searchDuration=0, moveStart=0, moveDuration=2000;
+uint32_t lastTick=0;
+struct Key { uint8_t pin; bool raw; bool stable; uint32_t changed; };
+Key keys[4]={{8,true,true,0},{7,true,true,0},{2,true,true,0},{4,true,true,0}};
+
+void light(bool on) {
+  analogWrite(WARM_PIN,0);
+  analogWrite(COOL_PIN,0);
+  ring.clear();
+  if(on) {
+    for(uint8_t i=0;i<12;i++)
+      ring.setPixelColor(i,ring.Color(YELLOW_BRIGHTNESS,YELLOW_BRIGHTNESS,0));
+  }
+  ring.show();
+}
+void writePose() {
+  yaw=constrain(yaw,(float)YAW_MIN,(float)YAW_MAX);
+  pitch=constrain(pitch,(float)PITCH_MIN,(float)PITCH_MAX);
+  yawServo.write((int)(yaw+0.5f));
+  pitchServo.write((int)(pitch+0.5f));
+}
+void beginMove(int y,int p,uint32_t duration,uint32_t now) {
+  fromYaw=yaw; fromPitch=pitch;
+  toYaw=constrain(y,YAW_MIN,YAW_MAX);
+  toPitch=constrain(p,PITCH_MIN,PITCH_MAX);
+  moveStart=now; moveDuration=duration;
+}
+bool updateMove(uint32_t now) {
+  uint32_t elapsed=now-moveStart;
+  float t=elapsed>=moveDuration ? 1.0f : (float)elapsed/moveDuration;
+  float eased=t*t*(3.0f-2.0f*t);
+  yaw=fromYaw+(toYaw-fromYaw)*eased;
+  pitch=fromPitch+(toPitch-fromPitch)*eased;
+  return elapsed>=moveDuration;
+}
+void chooseSearchMove(uint32_t now) {
+  beginMove((int)random(YAW_MIN,YAW_MAX+1),
+            (int)random(65,131),(uint32_t)random(600,1001),now);
+}
+void beginSearch(uint32_t now) {
+  light(false);
+  phase=SEARCH; phaseStart=now;
+  searchDuration=(uint32_t)random(10000,20001);
+  chooseSearchMove(now);
+}
+void press(uint8_t index,uint32_t now) {
+  if(index==0) {
+    // Only save a new target while manually aiming. During the show,
+    // button 1 restarts the search without replacing the saved direction.
+    if(phase==AIM) { aimYaw=(int)(yaw+0.5f); aimPitch=(int)(pitch+0.5f); }
+    beginSearch(now);
+  } else {
+    phase=AIM;
+    light(index!=3);
+  }
+}
+void pollKeys(uint32_t now) {
+  for(uint8_t i=0;i<4;i++) {
+    bool reading=digitalRead(keys[i].pin);
+    if(reading!=keys[i].raw) { keys[i].raw=reading; keys[i].changed=now; }
+    if(now-keys[i].changed>=30UL && keys[i].stable!=keys[i].raw) {
+      keys[i].stable=keys[i].raw;
+      if(!keys[i].stable) press(i,now);
+    }
+  }
+}
+float stickStep(int offset) {
+  const int deadZone=100;
+  if(offset>deadZone) return (offset-deadZone)*0.002f;
+  if(offset< -deadZone) return (offset+deadZone)*0.002f;
+  return 0;
+}
+void setup() {
+  pinMode(WARM_PIN,OUTPUT); pinMode(COOL_PIN,OUTPUT);
+  pinMode(HEIGHT_SPEED_PIN,OUTPUT); pinMode(HEIGHT_DIR_PIN,OUTPUT);
+  analogWrite(HEIGHT_SPEED_PIN,0); digitalWrite(HEIGHT_DIR_PIN,LOW);
+  for(uint8_t i=0;i<4;i++) pinMode(keys[i].pin,INPUT_PULLUP);
+  ring.begin(); light(false);
+  yawServo.attach(YAW_PIN); pitchServo.attach(PITCH_PIN); writePose();
+  long sumYaw=0,sumPitch=0;
+  for(uint8_t i=0;i<50;i++) {
+    sumYaw+=analogRead(JOY_YAW); sumPitch+=analogRead(JOY_PITCH); delay(5);
+  }
+  centerYaw=sumYaw/50; centerPitch=sumPitch/50;
+  randomSeed((unsigned long)analogRead(A0)*1024UL+micros());
+  // Start stationary with yellow light so the target can be lined up.
+  light(true); lastTick=millis();
+}
+void loop() {
+  uint32_t now=millis();
+  pollKeys(now); // Runs even while the show is in progress.
+  if(now-lastTick<20UL) return;
+  lastTick=now;
+  switch(phase) {
+    case AIM:
+      yaw+=stickStep(analogRead(JOY_YAW)-centerYaw);
+      pitch+=stickStep(analogRead(JOY_PITCH)-centerPitch);
+      break;
+    case SEARCH:
+      if(now-phaseStart>=searchDuration) {
+        phase=LOCK_ON;
+        beginMove(aimYaw,aimPitch,1500UL,now);
+      } else if(updateMove(now)) chooseSearchMove(now);
+      break;
+    case LOCK_ON:
+      if(updateMove(now)) { phase=SETTLE; phaseStart=now; }
+      break;
+    case SETTLE:
+      // Give the physical servos time to settle before switching on.
+      if(now-phaseStart>=SETTLE_MS) {
+        light(true); phase=SIGNAL; phaseStart=now;
+      }
+      break;
+    case SIGNAL:
+      if(now-phaseStart>=SIGNAL_MS) beginSearch(now);
+      break;
+  }
+  writePose();
+}
