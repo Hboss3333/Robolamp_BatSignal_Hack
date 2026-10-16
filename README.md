@@ -1,12 +1,12 @@
-🦇 RoboLamp Bat-Signal & Rainbow Hack
-Turn a CrunchLabs Hack Pack RoboLamp into a miniature searchlight! The lamp looks around with its light off, returns to a direction you choose, pauses, and lights up a 3D-printed bat silhouette. The rainbow version also includes a continuous blinking mode.
+🦇 RoboLamp Bat-Signal Hack
+Turn a CrunchLabs Hack Pack RoboLamp into a miniature searchlight! The lamp looks around with its light off, returns to a direction you choose, pauses, and lights up a 3D-printed bat silhouette.
 What it does
 - Searches the room: moves its head between random positions with the light off.
 - Remembers your aim: saves the direction you set with the joystick for the current powered session.
 - Locks onto the target: returns to that direction and pauses before lighting up.
-- Runs a light show: shines yellow in the original version, or blinks through rainbow colors in the rainbow version.
+- Turns on the Bat-Signal: holds its position and shines steady yellow for 15 seconds.
 - Repeats automatically: starts another search after the 15-second signal.
-The faster rainbow version uses 0.6–1 second search movements. Each search lasts 10–20 seconds, followed by a 1.5-second move back to the target and a 0.6-second settling pause.
+Each search lasts 10–20 seconds, followed by a 1.5-second move back to the target and a 0.6-second settling pause.
 This is a custom replacement for the stock firmware behaviors. The height motor stays off, and the normal stock moods and Pomodoro timer are not included.
 
 What you need
@@ -19,18 +19,18 @@ Install the code
 1. Save a copy of any code you want to keep.
 2. Connect the RoboLamp to your computer using a USB data cable.
 3. Open the CrunchLabs coding console and select RoboLamp.
-4. In the Explorer, open the project you are compiling, then src → main.cpp. For the rainbow installation, use StockCode → src → main.cpp.
+4. In the Explorer, open the project you are compiling, then src → main.cpp. For the original installation, use Pomodoro → src → main.cpp.
 5. Replace the entire contents of main.cpp with the complete firmware code. Leave the project's other files and library configuration in place.
 6. Click Verify, then Upload, selecting your board's connection when prompted.
 7. Keep the joystick centered during startup so its center position can be calibrated.
 Paste into main.cpp, not include/Config.h. Copy raw code with the code block's Copy button or from a downloaded file opened in a plain-text editor.
 Controls
-Control	Rainbow version	Original yellow version
-Joystick	Aim while stopped, including continuous rainbow mode	Aim while stopped
-Button 1	Save the current aim and start the search/rainbow sequence	Save the current aim and start the search/yellow sequence
-Button 2	Stop the show and display steady yellow	Stop the show and display steady yellow
-Button 3	Blink rainbow continuously, with manual aiming	Stop the show and display steady yellow
-Button 4	Stop the show and turn the lights off	Stop the show and turn the lights off
+Control	Action
+Joystick	Aim the head while stopped
+Button 1	Save the current aim and start the search/steady-yellow sequence
+Button 2	Stop the show and display steady yellow for manual aiming
+Button 3	Stop the show and display steady yellow for stencil alignment
+Button 4	Stop automatic movement and turn the lights off
 
 
 Pressing button 1 during an active search/show restarts it without replacing the saved direction. Button 4 stops automatic movement; the joystick still works.
@@ -40,7 +40,6 @@ Start the Bat-Signal
 3. Line up the stencil with the light.
 4. Darken the room and press button 1.
 The saved direction resets when power is restarted. This program does not detect darkness automatically.
-For rainbow blinking without automatic searching, press button 3 in the rainbow version. It cycles through red, orange, yellow, green, cyan, blue, and purple, with each color on for half a second and the light off for half a second.
 3D-printed bat stencil
 The corrected design uses a solid bat that blocks the light, attached to an outer ring by two thin supports. Light passes around the bat to create a shadow.
 Feature	Dimension
